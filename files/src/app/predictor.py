@@ -18,3 +18,18 @@ class Predictor:
             "label": prediction,
             "confidence": float(probability)
         }
+    
+def extract_ner_parameters(model, message: str):
+    """
+    Recebe o texto e o modelo carregado, retornando as entidades.
+    """
+    doc = model(message)
+    
+    extracted_parameters = []
+    for ent in doc.ents:
+        extracted_parameters.append({
+            "entity": ent.text,
+            "label": ent.label_
+        })
+        
+    return {"parameters": extracted_parameters}
