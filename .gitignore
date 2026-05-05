@@ -1,7 +1,7 @@
 src/__pycache__
 __pycache__
 .env
-files/model/
+files/model/*
 files/src/app/__pycache__
 .env
 .venv/
