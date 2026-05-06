@@ -2,6 +2,8 @@ import joblib
 from pathlib import Path
 import os
 import spacy
+from transformers import AutoTokenizer, AutoModelForSequenceClassification
+import torch
 
 MODEL_PATH = Path(__file__).resolve().parents[2] / "model" / "intent_model_v2.pkl"
 NER_MODEL_PATH = "files/model/ner_parameters"
@@ -33,3 +35,18 @@ def load_ner_model():
     # Assumindo que seja um modelo spaCy treinado
     model = spacy.load(NER_MODEL_PATH)
     return model
+
+
+def load_intent_model():
+    model_path = "files/model/modelo_intencao"
+
+    #carrega o tokenizer
+    tokenizer = AutoTokenizer.from_pretrained(model_path)
+    model = AutoModelForSequenceClassification.from_pretrained(model_path)
+
+    #coloca o modelo em evaluate mode e mova para cpu
+    model.eval()
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    model.to(device)
+
+    return tokenizer, model, device

@@ -1,4 +1,6 @@
 from app.model_loader import ModelLoader
+import torch
+import torch.nn.functional as F
 
 class Predictor:
 
@@ -33,3 +35,24 @@ def extract_ner_parameters(model, message: str):
         })
         
     return {"parameters": extracted_parameters}
+
+def predict_intent(model_bundle, message: str):
+    tokenizer, model, device = model_bundle
+
+    #tokenizacao
+    inputs = tokenizer(message, return_tensors="pt", padding=True, truncation=True, max_length=512)
+    inputs = {k: v.to(device) for k, v in inputs.items()}
+
+    with torch.no_grad():
+        outputs = model(**inputs)
+        probabilities = F.softmax(outputs.logits, dim=-1)
+        confidence, class_idx = torch.max(probabilities, dim=-1)
+
+        #mapeia ids para labels
+
+        intent_label = model.config.id2label[class_idx.item()]
+
+        return {
+            "tool": intent_label,
+            "confidence" : float(confidence.item())
+        }

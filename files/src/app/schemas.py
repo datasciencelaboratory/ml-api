@@ -20,3 +20,10 @@ class EntityOut(BaseModel):
 
 class NERResponse(BaseModel):
     parameters: List[EntityOut]
+
+class IntentRequest(BaseModel):
+    message: str
+
+class IntentResponse(BaseModel):
+    intent: str
+    confidence: float
