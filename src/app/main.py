@@ -15,6 +15,8 @@ from app.predictor import Predictor, extract_ner_parameters, predict_intent
 from app.model_loader import load_ner_model, load_intent_model
 from contextlib import asynccontextmanager
 
+from app.utils import extrair_entidades_regex
+
 ml_models = {}
 
 intent_bundle = load_intent_model()
@@ -89,6 +91,8 @@ async def predict(request: PredictRequest):
         result['intent'] = prediction
         result['ner'] = ner_result
         
+        result['ner'] = extrair_entidades_regex(request.message, result['ner'])
+
         # Retorna o resultado do NER
         return result
     return result

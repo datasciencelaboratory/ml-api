@@ -6,7 +6,7 @@ from transformers import AutoTokenizer, AutoModelForSequenceClassification
 import torch
 
 MODEL_PATH = Path(__file__).resolve().parents[2] / "model" / "intent_model_v2.pkl"
-NER_MODEL_PATH = "files/model/ner_parameters"
+NER_MODEL_PATH = "model/ner_parameters"
 
 class ModelLoader:
 
@@ -38,7 +38,7 @@ def load_ner_model():
 
 
 def load_intent_model():
-    model_path = "files/model/modelo_intencao"
+    model_path = "model/modelo_intencaov2"
 
     #carrega o tokenizer
     tokenizer = AutoTokenizer.from_pretrained(model_path)
