@@ -17,6 +17,17 @@ from contextlib import asynccontextmanager
 
 from app.utils import extrair_entidades_regex
 
+import os
+from functools import lru_cache
+
+import google.generativeai as genai
+
+from dotenv import load_dotenv
+
+load_dotenv()
+
+genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
+
 ml_models = {}
 
 intent_bundle = load_intent_model()
@@ -141,3 +152,40 @@ async def get_intent(request: IntentRequest):
     #passa o bundle completo para o predictor
     prediction = predict_intent(intent_bundle, request.message)
     return prediction
+
+
+
+@lru_cache(maxsize=1)
+def _bm25_model():
+    from fastembed import SparseTextEmbedding
+
+    return SparseTextEmbedding(model_name="Qdrant/bm25")
+
+
+@app.post("/embed")
+def embed(req: Request):
+    result = genai.embed_content(
+        model="models/gemini-embedding-2-preview",
+        content=req.text,
+        task_type="retrieval_document",
+    )
+
+    return {"embedding": result["embedding"]}
+
+
+@app.post("/sparse")
+def sparse(req: Request):
+    """BM25 esparso (fastembed Qdrant/bm25) no formato Qdrant: indices + values."""
+    model = _bm25_model()
+    sparse_emb = next(model.embed([req.text]))
+    indices = sparse_emb.indices
+    values = sparse_emb.values
+    if hasattr(indices, "tolist"):
+        indices = indices.tolist()
+    else:
+        indices = list(indices)
+    if hasattr(values, "tolist"):
+        values = values.tolist()
+    else:
+        values = list(values)
+    return {"indices": indices, "values": values}

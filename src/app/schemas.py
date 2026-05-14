@@ -27,3 +27,8 @@ class IntentRequest(BaseModel):
 class IntentResponse(BaseModel):
     intent: str
     confidence: float
+
+
+class Request(BaseModel):
+    text: str
+
