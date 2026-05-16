@@ -8,3 +8,5 @@ gunicorn
 transformers
 torch
 spacy
+google.generativeai
+fastembed

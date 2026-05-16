@@ -1,18 +1,20 @@
 from fastapi import FastAPI, HTTPException
-
+import json
 from app.schemas import (
     PredictRequest,
-    PredictResponse,
     NERRequest,
     NERResponse,
     IntentRequest, 
-    IntentResponse
+    IntentResponse,
+    ClassifyRequest,
+    ClassifyResponse,
+    Request
 )
 
-from app.predictor import Predictor, extract_ner_parameters, predict_intent
+from app.predictor import extract_ner_parameters, predict_intent
 
 
-from app.model_loader import load_ner_model, load_intent_model
+from app.model_loader import load_ner_model, load_intent_model, load_gguf_model
 from contextlib import asynccontextmanager
 
 from app.utils import extrair_entidades_regex
@@ -30,27 +32,46 @@ genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
 
 ml_models = {}
 
-intent_bundle = load_intent_model()
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # ----------------------------------------------------
-    # TUDO AQUI RODA ANTES DO SERVIDOR ACEITAR REQUISIÇÕES
-    # ----------------------------------------------------
-    print("Iniciando o servidor e carregando o modelo NER na memória...")
+    print("Iniciando o servidor e carregando os modelos na memória...")
+    
+    # 1. Tentativa de carregar o Predictor clássico
     try:
-        # Carrega o modelo chamando a função que você já criou
+        from app.predictor import Predictor
+        ml_models["predictor"] = Predictor()
+        print("Predictor clássico carregado com sucesso!")
+    except Exception as e:
+        print(f"Aviso: Não foi possível carregar o Predictor: {e}")
+        ml_models["predictor"] = None
+
+    # 2. Tentativa de carregar o modelo NER
+    try:
         ml_models["ner_model"] = load_ner_model()
         print("Modelo NER carregado com sucesso!")
     except Exception as e:
-        print(f"Erro ao carregar o modelo NER: {e}")
+        print(f"Aviso: Não foi possível carregar o modelo NER: {e}")
+        ml_models["ner_model"] = None
     
-    # O 'yield' sinaliza que o servidor está pronto para rodar
+    # 3. Tentativa de carregar o modelo Intent (Transformers)
+    try:
+        ml_models["intent_bundle"] = load_intent_model()
+        print("Modelo Intent carregado com sucesso!")
+    except Exception as e:
+        print(f"Aviso: Não foi possível carregar o modelo Intent: {e}")
+        ml_models["intent_bundle"] = None
+
+    # 4. Tentativa de carregar o modelo GGUF (Llama-cpp)
+    try:
+        from app.model_loader import load_gguf_model
+        ml_models["gguf_model"] = load_gguf_model()
+        print("Modelo GGUF carregado com sucesso!")
+    except Exception as e:
+        print(f"Aviso: Não foi possível carregar o modelo GGUF: {e}")
+        ml_models["gguf_model"] = None
+    
     yield 
     
-    # ----------------------------------------------------
-    # TUDO AQUI RODA QUANDO O SERVIDOR FOR DESLIGADO
-    # ----------------------------------------------------
     print("Limpando memória e desligando servidor...")
     ml_models.clear()
 
@@ -60,9 +81,6 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-
-
-predictor = Predictor()
 
 
 @app.get("/health")
@@ -78,7 +96,7 @@ async def predict(request: PredictRequest):
 
     result = {}
 
-    result['predict'] = predictor.predict(
+    result['predict'] = ml_models['predictor'].predict(
         request.message
     )
 
@@ -93,12 +111,12 @@ async def predict(request: PredictRequest):
         if ner_model is None:
             raise HTTPException(status_code=503, detail="Modelo NER não carregado.")
         
-        if intent_bundle is None:
+        if ml_models['predictor'] is None:
             raise HTTPException(status_code=503, detail="Modelo Intent não carregado.")
         
         # Chama a função de extração que criamos
         ner_result = extract_ner_parameters(ner_model, request.message)
-        prediction = predict_intent(intent_bundle, request.message)
+        prediction = predict_intent(ml_models['predictor'], request.message)
         result['intent'] = prediction
         result['ner'] = ner_result
         
@@ -107,28 +125,6 @@ async def predict(request: PredictRequest):
         # Retorna o resultado do NER
         return result
     return result
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    # ----------------------------------------------------
-    # TUDO AQUI RODA ANTES DO SERVIDOR ACEITAR REQUISIÇÕES
-    # ----------------------------------------------------
-    print("Iniciando o servidor e carregando o modelo NER na memória...")
-    try:
-        # Carrega o modelo chamando a função que você já criou
-        ml_models["ner_model"] = load_ner_model()
-        print("Modelo NER carregado com sucesso!")
-    except Exception as e:
-        print(f"Erro ao carregar o modelo NER: {e}")
-    
-    # O 'yield' sinaliza que o servidor está pronto para rodar
-    yield 
-    
-    # ----------------------------------------------------
-    # TUDO AQUI RODA QUANDO O SERVIDOR FOR DESLIGADO
-    # ----------------------------------------------------
-    print("Limpando memória e desligando servidor...")
-    ml_models.clear()
 
 
 
@@ -150,7 +146,7 @@ async def ner_endpoint(request: NERRequest):
 @app.post('/intent_predict', response_model=IntentResponse)
 async def get_intent(request: IntentRequest):
     #passa o bundle completo para o predictor
-    prediction = predict_intent(intent_bundle, request.message)
+    prediction = predict_intent(ml_models['predictor'], request.message)
     return prediction
 
 
@@ -189,3 +185,50 @@ def sparse(req: Request):
     else:
         values = list(values)
     return {"indices": indices, "values": values}
+
+
+
+@app.post("/classify")
+async def classify_endpoint(request: ClassifyRequest):
+    gguf_model = ml_models.get("gguf_model")
+    if gguf_model is None:
+        raise HTTPException(status_code=503, detail="O modelo GGUF para /classify não está disponível.")
+    
+    # 1. Definimos o comportamento esperado (igual ao seu dataset de treino)
+    system_prompt = (
+        "Você é uma inteligência artificial especializada em análise de linguagem natural "
+        "para sistemas de controle de acesso de condomínios e empresas.\n"
+        "Sua tarefa é classificar a intenção (Intent) do usuário e extrair entidades (NER).\n"
+        "Sempre responda APENAS com um JSON válido contendo as chaves: intent, parameters, entities e response."
+    )
+    
+    # 2. Montamos o prompt EXATAMENTE no formato ChatML do seu fine-tuning
+    prompt_formatado = (
+        f"<|im_start|>system\n{system_prompt}<|im_end|>\n"
+        f"<|im_start|>user\n{request.message}<|im_end|>\n"
+        f"<|im_start|>assistant\n"
+    )
+    
+    try:
+        # 3. Executamos o modelo
+        output = gguf_model(
+            prompt_formatado,
+            max_tokens=300,        # Aumentado para suportar o tamanho do JSON gerado
+            stop=["<|im_end|>"],   # CRÍTICO: Faz o modelo parar ao terminar de gerar o JSON
+            echo=False,            # Não repete o prompt na resposta
+            temperature=0.1        # Temperatura baixa (0.1) garante saídas mais precisas e JSONs mais estáveis
+        )
+        
+        # Extrai o texto gerado
+        resultado_texto = output["choices"][0]["text"].strip()
+        
+        # 4. (Opcional, mas recomendado) Valida se a resposta é realmente um JSON
+        try:
+            resultado_json = json.loads(resultado_texto)
+            return resultado_json # Retorna o JSON direto para quem chamou a API
+        except json.JSONDecodeError:
+            # Fallback caso o modelo tenha alucinado e gerado texto fora do JSON
+            return {"erro": "O modelo não retornou um JSON válido", "texto_bruto": resultado_texto}
+            
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erro na inferência GGUF: {str(e)}")

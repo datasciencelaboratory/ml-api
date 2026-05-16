@@ -4,7 +4,9 @@ import os
 import spacy
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
 import torch
+from llama_cpp import Llama
 
+GGUF_MODEL_PATH = "model/qwen_q8.gguf" # Substitua pelo nome real do seu arquivo
 MODEL_PATH = Path(__file__).resolve().parents[2] / "model" / "intent_model_v2.pkl"
 NER_MODEL_PATH = "model/ner_parameters"
 
@@ -50,3 +52,16 @@ def load_intent_model():
     model.to(device)
 
     return tokenizer, model, device
+
+
+
+
+def load_gguf_model():
+    """Carrega o modelo GGUF usando llama-cpp-python."""
+    if not os.path.exists(GGUF_MODEL_PATH):
+        raise FileNotFoundError(f"Modelo GGUF não encontrado em: {GGUF_MODEL_PATH}")
+    
+    print("Carregando modelo GGUF...")
+    # O parâmetro n_ctx define o tamanho do contexto. Ajuste conforme a necessidade do seu modelo.
+    model = Llama(model_path=GGUF_MODEL_PATH, n_ctx=1024, verbose=False)
+    return model

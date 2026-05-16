@@ -32,3 +32,8 @@ class IntentResponse(BaseModel):
 class Request(BaseModel):
     text: str
 
+class ClassifyRequest(BaseModel):
+    message: str
+
+class ClassifyResponse(BaseModel):
+    classification: str
